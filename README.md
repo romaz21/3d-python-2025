@@ -43,7 +43,7 @@ pre-commit run -a
 
 #### UI
 
-[Example](https://gitlab.com/ea_evdokimov/3d-python/-/blob/dev/3d-python-media/example_configs/ui_config.json)
+[Example](https://github.com/kochagin-iv/3d-python-2025/blob/main/3d-python-media/example_configs/ui_config.json)
 
 - lat: float - Широта интересующей точки [-60, 60] - то есть от 60 градусов северной широты до 60 градусов южной широты (более полных карт в открытом доступе не найдено)
 
