@@ -29,6 +29,8 @@ poetry run python -m mountain3d
 
 #### Перед пушем в ветку
 
+Ожидаемое имя ветки - `feature/` + номер решаемой задачи, например, 1.3.5
+
 ```bash
 pre-commit run -a
 ```
