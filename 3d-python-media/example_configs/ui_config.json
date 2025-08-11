@@ -1,0 +1,10 @@
+{
+    "lat": 45.5,
+    "long": 34.0,
+    "size_km": 600,
+    "map_size_px": [
+        300,
+        300
+    ],
+    "cache": true
+}

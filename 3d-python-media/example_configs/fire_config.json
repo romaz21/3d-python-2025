@@ -1,0 +1,13 @@
+{
+    "D_min": 5000,
+    "D_max": 150000,
+    "H_min": 10,
+    "H_max": 27000,
+    "Dead_angle": 5,
+    "N_h": 1000,
+
+    "azimuth_from": 0,
+    "azimuth_to": 359,
+    "sector_size": 5,
+    "height_num": 100
+}
