@@ -288,6 +288,14 @@ def run_app():  # noqa
     def calculate_and_draw_zones(_, saved_points, slice_height_2d, fig_data):
         if ctx.triggered_id == "calculate_zones_button" and saved_points:
             fig = go.Figure(fig_data)
+
+            traces_to_keep = []
+            for trace in fig.data:
+                if trace.type != 'scatter3d' or trace.mode != 'lines':
+                    traces_to_keep.append(trace)
+
+            fig.data = traces_to_keep
+
             all_polygons = []
 
             for point_data in saved_points:
