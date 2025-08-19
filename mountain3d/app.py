@@ -27,7 +27,6 @@ from .math import get_zone
 
 MODE_2D = False
 
-
 def make_rooted_path(paths: List[str]):
     return [REPO_ROOT / path for path in paths]
 
@@ -52,6 +51,18 @@ def run_app():  # noqa
         height=DEFAULT_HEIGHT,
         width=DEFAULT_WIDTH,
         cahce_path=cahce_path,
+    )
+
+    global camera_settings
+    camera_settings = {
+        'eye': {'x': 0, 'y': 0, 'z': 1.5},
+        'up': {'x': 0, 'y': 0, 'z': 1},
+        'center': {'x': 0, 'y': 0, 'z': 0}
+    }
+
+    fig.update_layout(
+        scene_camera=camera_settings,
+        margin=dict(l=0, r=0, t=0, b=0),
     )
 
     with (
@@ -118,9 +129,18 @@ def run_app():  # noqa
                 ],
                 id="modal",
             ),
-            dcc.Graph(figure=fig, id="main_graph", style={"height": "100%"}),
+            dcc.Graph(figure=fig.update_layout(
+                margin=dict(l=0, r=0, t=0, b=0),
+                height=800
+            ),
+            id="main_graph",
+            style={
+                "height": "800px",
+                "width": "100%",
+            }),
             create_controls(),
             dcc.Store(id="coordinate_store"),
+            dcc.Store(id="saved_points_store", data=[]),
         ],
         style={"height": "100%"},
     )
@@ -194,41 +214,30 @@ def run_app():  # noqa
         return result_dict
 
     @app.callback(
-        Output("modal", "is_open", allow_duplicate=True),
-        Output("main_graph", "figure"),
+        Output("modal", "is_open"),
+        Output("saved_points_store", "data"),
         State("coordinate_store", "data"),
         State("image_upload", "contents"),
-        State("main_graph", "figure"),
         {key: State(f"loc_inp_{key}", "value") for key in loc_ann},
         {key: State(f"launch_inp_{key}", "value") for key in launch_ann},
         {key: State(f"control_inp_{key}", "value") for key in control_ann},
         {key: State(f"object_inp_{key}", "value") for key in object_ann},
-        State("slice_height_2d", "value"),
         State("input_tabs", "active_tab"),
         Input("add_arma_button", "n_clicks"),
+        State("saved_points_store", "data"),
     )
-    def close_arma_settings(
+    def save_point_data(
         coords,
         image_contents,
-        fig,
         loc_config,
         launch_config,
         control_config,
         object_config,
-        slice_height_2d,
         active_tab,
-        *_,
+        _,
+        saved_points,
     ):
-        if "data" in fig.keys():
-            for object in fig["data"]:
-                if object.get("hoverinfo") == "text":
-                    object["text"] = np.array(object["text"])
-
-        fig = go.Figure(fig)
-        if (
-            ctx.triggered_id == "add_arma_button"
-            or ctx.triggered_id == "close_modal_button"
-        ):
+        if ctx.triggered_id == "add_arma_button":
             if active_tab == "locator_input":
                 arma_type = "alarm"
                 config = loc_config
@@ -250,62 +259,93 @@ def run_app():  # noqa
                 raise ValueError(f"Invalid tab id! {active_tab=}")
 
             center = json.loads(coords)
-            center_pos = center[:-1]
-
-            if image_contents:
-                image_file = io.BytesIO(base64.b64decode(image_contents.split(",")[1]))
-                image_file.name = "image_file.stl"
-                draw_alarm_fire_stl_model(fig, image_file, center, scale_coefs)
-
-            if arma_type == "control" or arma_type == "object":
-                return False, fig
             
-            logger.info(f"Drawing {arma_type} detection dome...")
-            if arma_type == "dron":
-                print("center: ", center)
-                print("center_pos: ", center_pos)
-                add_aircraft(fig, center, scale_coefs=scale_coefs)
-                return False, fig
-
-            heights, layers_dots_inner, layers_dots_outer = get_zone(
-                zone_type=arma_type,
-                azimut_from=config["azimuth_from"] * np.pi / 180,
-                azimut_to=config["azimuth_to"] * np.pi / 180,
-                center=center_pos,
-                heightmap=heightmap,
-                bin_size=config["sector_size"] * np.pi / 180,
-                height_amount=int(config["height_num"]),
-                config=config,
-                length_coefficient_x=spacing[0],
-                length_coefficient_y=spacing[1],
-            )
-
-            color = "magenta" if arma_type == "fire" else "cyan"
-
-            layers_dots = np.concatenate(
-                [layers_dots_inner, layers_dots_outer[::-1]], axis=0
-            )
-
-            global MODE_2D
-            if MODE_2D:
-                draw_detection_dome_slices(
-                    layers_dots,
-                    np.concatenate([heights, heights[::-1]]),
-                    fig,
-                    arma_type,
-                    slice_height_2d,
-                )
-            else:
-                draw_detection_dome(
-                    layers_dots, np.concatenate([heights, heights[::-1]]), fig, color
-                )
-
-            return False, fig
-
+            point_data = {
+                "type": arma_type,
+                "center": center,
+                "config": config,
+                "image_contents": image_contents
+            }
+            
+            saved_points.append(point_data)
+            
+            return False, saved_points
+        
         return no_update, no_update
 
     @app.callback(
+        Output("main_graph", "figure"),
+        Input("calculate_zones_button", "n_clicks"),
+        State("saved_points_store", "data"),
+        State("slice_height_2d", "value"),
+        State("main_graph", "figure"),
+    )
+    def calculate_and_draw_zones(_, saved_points, slice_height_2d, fig_data):
+        if ctx.triggered_id == "calculate_zones_button" and saved_points:
+            fig = go.Figure(fig_data)
+            
+            for point_data in saved_points:
+                arma_type = point_data["type"]
+                center = point_data["center"]
+                config = point_data["config"]
+                image_contents = point_data["image_contents"]
+                
+                if image_contents:
+                    image_file = io.BytesIO(base64.b64decode(image_contents.split(",")[1]))
+                    image_file.name = "image_file.stl"
+                    draw_alarm_fire_stl_model(fig, image_file, center, scale_coefs)
+
+                if arma_type == "control" or arma_type == "object":
+                    continue
+
+                if arma_type == "dron":
+                    add_aircraft(fig, center, scale_coefs=scale_coefs)
+                    continue
+
+                center_pos = center[:-1]
+                
+                heights, layers_dots_inner, layers_dots_outer = get_zone(
+                    zone_type=arma_type,
+                    azimut_from=config["azimuth_from"] * np.pi / 180,
+                    azimut_to=config["azimuth_to"] * np.pi / 180,
+                    center=center_pos,
+                    heightmap=heightmap,
+                    bin_size=config["sector_size"] * np.pi / 180,
+                    height_amount=int(config["height_num"]),
+                    config=config,
+                    length_coefficient_x=spacing[0],
+                    length_coefficient_y=spacing[1],
+                )
+
+                color = "magenta" if arma_type == "fire" else "cyan"
+                layers_dots = np.concatenate(
+                    [layers_dots_inner, layers_dots_outer[::-1]], axis=0
+                )
+
+                if MODE_2D:
+                    draw_detection_dome_slices(
+                        layers_dots,
+                        np.concatenate([heights, heights[::-1]]),
+                        fig,
+                        arma_type,
+                        slice_height_2d,
+                    )
+                else:
+                    draw_detection_dome(
+                        layers_dots, np.concatenate([heights, heights[::-1]]), fig, color
+                    )
+
+            fig.update_layout(
+                scene_camera=camera_settings,
+                margin=dict(l=0, r=0, t=0, b=0),
+            )
+            return fig
+        
+        return no_update
+
+    @app.callback(
         Output("main_graph", "figure", allow_duplicate=True),
+        Output("saved_points_store", "data", allow_duplicate=True),
         State("graph_width", "value"),
         State("graph_height", "value"),
         State("x_ratio", "value"),
@@ -314,7 +354,7 @@ def run_app():  # noqa
         Input("clean_map", "n_clicks"),
     )
     def clean_map(width, height, x_ratio, y_ratio, z_ratio, _):
-        return create_figure(
+        fig = create_figure(
             heightmap_paths=REPO_ROOT / "3d-python-media/maps/preprocessed",
             lat=ui_config["lat"],
             long=ui_config["long"],
@@ -326,6 +366,12 @@ def run_app():  # noqa
             mode_2d=MODE_2D,
             cahce_path=cahce_path,
         )[0]
+
+        fig.update_layout(
+            scene_camera=camera_settings,
+            margin=dict(l=0, r=0, t=0, b=0),
+        )
+        return fig, []
 
     @app.callback(
         Output("main_graph", "figure", allow_duplicate=True),
@@ -339,7 +385,7 @@ def run_app():  # noqa
     def mode(width, height, x_ratio, y_ratio, z_ratio, _):
         global MODE_2D
         MODE_2D = not MODE_2D
-        return create_figure(
+        fig = create_figure(
             heightmap_paths=REPO_ROOT / "3d-python-media/maps/preprocessed",
             lat=ui_config["lat"],
             long=ui_config["long"],
@@ -351,6 +397,12 @@ def run_app():  # noqa
             mode_2d=MODE_2D,
             cahce_path=cahce_path,
         )[0]
+
+        fig.update_layout(
+            scene_camera=camera_settings,
+            margin=dict(l=0, r=0, t=0, b=0),
+        )
+        return fig
 
     app.run(debug=True)
 
