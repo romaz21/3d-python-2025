@@ -9,12 +9,17 @@ import plotly.graph_objects as go
 from dash import Dash, Input, Output, State, ctx, dcc, no_update
 from loguru import logger
 
+from shapely.ops import unary_union
+from shapely.geometry import Polygon, MultiPolygon
+
 from .const import (
     DEFAULT_HEIGHT,
     DEFAULT_RATIO,
     DEFAULT_SLICE_HEIGHT_2D,
     DEFAULT_WIDTH,
     REPO_ROOT,
+    ALARM_HEIGHT_COLOR_MAPPING,
+    FIRE_HEIGHT_COLOR_MAPPING,
 )
 from .graphics import (
     add_aircraft,
@@ -283,7 +288,8 @@ def run_app():  # noqa
     def calculate_and_draw_zones(_, saved_points, slice_height_2d, fig_data):
         if ctx.triggered_id == "calculate_zones_button" and saved_points:
             fig = go.Figure(fig_data)
-            
+            all_polygons = []
+
             for point_data in saved_points:
                 arma_type = point_data["type"]
                 center = point_data["center"]
@@ -329,18 +335,83 @@ def run_app():  # noqa
                         fig,
                         arma_type,
                         slice_height_2d,
+                        all_polygons,
                     )
                 else:
                     draw_detection_dome(
                         layers_dots, np.concatenate([heights, heights[::-1]]), fig, color
                     )
 
+            if all_polygons and MODE_2D:
+                union_polygon = unary_union(all_polygons)
+
+                # Обрабатываем разные типы результатов объединения
+                polygons = []
+                if isinstance(union_polygon, Polygon):
+                    polygons = [union_polygon]
+                elif isinstance(union_polygon, MultiPolygon):
+                    polygons = list(union_polygon.geoms)
+
+                # Создаем словарь для хранения полигонов по типам
+                type_polygons = {'alarm': [], 'fire': []}
+
+                # Собираем полигоны по типам
+                for point_data, polygon in zip(saved_points, all_polygons):
+                    if point_data['type'] in ['alarm', 'fire']:
+                        type_polygons[point_data['type']].append(polygon)
+
+                # Рисуем границы для каждого типа отдельно
+                for arma_type in ['alarm', 'fire']:
+                    if not type_polygons[arma_type]:
+                        continue
+
+                    # Объединяем полигоны одного типа
+                    type_union = unary_union(type_polygons[arma_type])
+
+                    # Получаем цвет для текущего типа
+                    color_mapper = ALARM_HEIGHT_COLOR_MAPPING if arma_type == 'alarm' else FIRE_HEIGHT_COLOR_MAPPING
+                    color = color_mapper(slice_height_2d)
+
+                    # Обрабатываем объединенный полигон
+                    polygons_to_draw = []
+                    if isinstance(type_union, Polygon):
+                        polygons_to_draw = [type_union]
+                    elif isinstance(type_union, MultiPolygon):
+                        polygons_to_draw = list(type_union.geoms)
+
+                    for polygon in polygons_to_draw:
+                        # Внешняя граница
+                        if polygon.exterior:
+                            xs, ys = np.array(polygon.exterior.xy)
+                            fig.add_trace(go.Scatter3d(
+                                x=xs,
+                                y=ys,
+                                z=np.full_like(xs, slice_height_2d),
+                                line=dict(color=color, width=7),
+                                mode="lines",
+                                hoverinfo="skip",
+                                showlegend=False
+                            ))
+
+                        # Внутренние отверстия (если есть)
+                        for interior in polygon.interiors:
+                            xs, ys = np.array(interior.xy)
+                            fig.add_trace(go.Scatter3d(
+                                x=xs,
+                                y=ys,
+                                z=np.full_like(xs, slice_height_2d),
+                                line=dict(color=color, width=7),
+                                mode="lines",
+                                hoverinfo="skip",
+                                showlegend=False
+                            ))
+
             fig.update_layout(
                 scene_camera=camera_settings,
                 margin=dict(l=0, r=0, t=0, b=0),
             )
             return fig
-        
+
         return no_update
 
     @app.callback(

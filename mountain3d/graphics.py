@@ -6,6 +6,8 @@ import numpy as np
 import plotly.graph_objects as go
 from stl.mesh import Mesh
 
+from shapely.geometry import Polygon
+
 from mountain3d.map_generator import CachedMapGenerator
 from mountain3d.math import create_dome_slice, dome2layers, layers2inner_outer
 
@@ -135,7 +137,8 @@ def draw_detection_dome_slices(
     fig: go.Figure,
     arma_type: str,
     slice_height_2d: int,
-) -> go.Figure:
+    all_polygons: list  # Добавляем новый параметр для сбора полигонов
+) -> tp.Optional[Polygon]:  # Возвращаем полигон вместо фигуры
     layers = dome2layers(layers_dots, dome_heights)
     inner_detection_surface_layers, outer_detection_surface_layers = layers2inner_outer(
         layers
@@ -147,6 +150,7 @@ def draw_detection_dome_slices(
     )
     line_color = color_mapper(slice_height_2d)
 
+    polygons = []
     for dome_layers in [inner_detection_surface_layers, outer_detection_surface_layers]:
         dome_layers_heights = dome_layers[:, 2, 0]
         if slice_height_2d > max(dome_layers_heights) or slice_height_2d < min(
@@ -155,20 +159,26 @@ def draw_detection_dome_slices(
             continue
 
         xs, ys, zs = create_dome_slice(slice_height_2d, dome_layers)
-        print("Drawing stl mode2...")
-        fig.add_trace(
-            go.Scatter3d(
-                x=xs,
-                y=ys,
-                z=zs,
-                line=dict(color=line_color, width=6),
-                mode="lines",
-                hoverinfo="skip",
-                showlegend=False,
-            )
-        )
-
-    return fig
+        
+        # Создаем полигон и добавляем в список
+        if len(xs) > 2:  # Нужно минимум 3 точки для полигона
+            polygon = Polygon(zip(xs, ys))
+            polygons.append(polygon)
+    
+    # Объединяем внутренний и внешний полигоны в один (если есть оба)
+    zone_polygon = None
+    if polygons:
+        if len(polygons) == 2:
+            # Внешний полигон минус внутренний (создаем кольцо)
+            zone_polygon = polygons[1].difference(polygons[0])
+        else:
+            zone_polygon = polygons[0]
+    
+    # Добавляем полигон в общий список
+    if zone_polygon:
+        all_polygons.append(zone_polygon)
+    
+    return None  # Больше не добавляем следы напрямую
 
 
 def draw_detection_dome(
