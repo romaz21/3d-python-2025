@@ -1,3 +1,4 @@
+from itertools import product
 import json
 import os
 import pickle
@@ -33,12 +34,11 @@ def lat_long_checker_and_corrector(
     assert -90 <= lat <= 90
     assert -180 <= long <= 180
 
-    if np.isclose(np.abs(lat), 90):
-        lat -= np.sign(lat) * EPS
+    if abs(lat) >= 90 - EPS:
+        lat = (90 - EPS) * (1 if lat > 0 else -1)
 
-    if np.isclose(np.abs(long), 180):
-        long -= np.sign(long) * EPS
-
+    if abs(long) >= 180 - EPS:
+        long = (180 - EPS) * (1 if long > 0 else -1)
     return lat, long
 
 
@@ -169,15 +169,7 @@ def get_map_geotiff(  # noqa
         long_inds.append(cur_long)
 
     # Read GeoTiff
-    maps = []
-    for i in lat_inds:
-        for j in long_inds:
-            fname = os.path.join(heightmap_paths, FILENAME_TEMPLATE.format(j, i))
-            if os.path.isfile(fname):
-                file = rs.open(fname)
-                maps.append(file)
-                continue
-            logger.warning(f"No file {fname=}")
+    maps = find_geotiff_files(heightmap_paths, lat_inds, long_inds)
 
     if not maps:
         logger.error("No map for that area! Closing app...")
@@ -206,6 +198,10 @@ def get_map_geotiff(  # noqa
             lat, long = heightmap_transform * (i, j)
             latitudes[i, j] = lat
             longitudes[i, j] = long
+
+    # rows, cols = heightmap.shape
+    # x, y = np.meshgrid(np.arange(cols), np.arange(rows))
+    # longitudes, latitudes = heightmap_transform * (y, x)
 
     logger.debug(f"{coord_angles=}")
     logger.debug(f"{map_angles=}")
@@ -349,3 +345,13 @@ class CachedMapGenerator:
 
         heightmap, _, latitudes, longitudes, req_bounds_np = return_values
         return heightmap, latitudes, longitudes, req_bounds_np
+
+def find_geotiff_files(heightmap_paths: Path, lat_inds: list[int], long_inds: list[int]) -> list:
+    files = []
+    for i, j in product(lat_inds, long_inds):
+        fname = heightmap_paths / FILENAME_TEMPLATE.format(j, i)
+        if fname.exists():
+            files.append(rs.open(fname))
+        else:
+            logger.warning(f"File not found: {fname}")
+    return files

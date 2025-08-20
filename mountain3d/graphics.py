@@ -76,7 +76,13 @@ def draw_landscape(
     size: Tuple[float, float],
     latitudes: np.ndarray,
     longitudes: np.ndarray,
+    lod_threshold: int = 1_000_000
 ) -> go.Figure:
+    # if heightmap.size > lod_threshold:
+    #     heightmap = heightmap[::2, ::2]
+    #     latitudes = latitudes[::2, ::2]
+    #     longitudes = longitudes[::2, ::2]
+
     xs, ys = np.meshgrid(
         np.linspace(0, size[0], heightmap.shape[0]),
         np.linspace(0, size[1], heightmap.shape[1]),
@@ -94,7 +100,7 @@ def draw_landscape(
             for j in range(heightmap.shape[0])
         ]
     )
-
+    print("Drawing stl mode3...")
     fig.add_trace(
         go.Surface(
             x=xs,
@@ -111,6 +117,12 @@ def draw_landscape(
             cmax=4500,
             hoverinfo="text",
             text=text,
+            # lighting=dict(
+            #     ambient=0.8,
+            #     diffuse=0.6,
+            #     fresnel=0.1,
+            #     specular=0.1
+            # )
         )
     )
 
@@ -143,7 +155,7 @@ def draw_detection_dome_slices(
             continue
 
         xs, ys, zs = create_dome_slice(slice_height_2d, dome_layers)
-
+        print("Drawing stl mode2...")
         fig.add_trace(
             go.Scatter3d(
                 x=xs,
@@ -165,6 +177,7 @@ def draw_detection_dome(
     fig: go.Figure,
     color: str,
 ) -> go.Figure:
+    print("Drawing stl mode4...")
     dots_per_layer = layers_dots[0].shape[1]
     total_dots = dots_per_layer * len(heights)
 
@@ -234,14 +247,7 @@ def create_figure(
 
     return fig, heightmap, scale_coefs, spacing
 
-
-def draw_alarm_fire_stl_model(
-    fig: go.Figure,
-    image_file,
-    center: List,
-    scale_coefs: List,
-) -> go.Figure:
-    def stl2mesh3d(stl_mesh):
+def stl2mesh3d(stl_mesh):
         p, q, r = stl_mesh.vectors.shape  # (p, 3, 3)
         vertices, ixr = np.unique(
             stl_mesh.vectors.reshape(p * q, r), return_inverse=True, axis=0
@@ -251,6 +257,12 @@ def draw_alarm_fire_stl_model(
         k = np.take(ixr, [3 * k + 2 for k in range(p)])
         return vertices, i, j, k
 
+def draw_alarm_fire_stl_model(
+    fig: go.Figure,
+    image_file,
+    center: List,
+    scale_coefs: List,
+) -> go.Figure:
     model = Mesh.from_file(image_file.name, fh=image_file)
     vertices, i, j, k = stl2mesh3d(model)
     x, y, z = vertices.T
@@ -275,4 +287,91 @@ def draw_alarm_fire_stl_model(
     )
     fig.add_traces([mesh])
 
+    return fig
+
+def add_aircraft(
+    fig: go.Figure,
+    center: List,
+    scale: float = 1.0,
+    rotation: List = [0, 0, 0],
+    color: str = "red",
+    scale_coefs: List[float] = None
+) -> go.Figure:
+    model = Mesh.from_file('./3d-python-media/models/planes/30.stl')
+    
+    vertices, i, j, k = stl2mesh3d(model)
+    x, y, z = vertices.T
+
+    if scale_coefs is None:
+        scale_coefs = [1.0, 1.0, 1.0]
+    
+    base_rotation = np.radians([90, 0, 0])
+    pitch_base, yaw_base, roll_base = base_rotation
+    
+    Rx_base = np.array([
+        [1, 0, 0],
+        [0, np.cos(pitch_base), -np.sin(pitch_base)],
+        [0, np.sin(pitch_base), np.cos(pitch_base)]
+    ])
+    
+    rotated_base = np.dot(np.vstack([x, y, z]).T, Rx_base.T)
+    x, y, z = rotated_base.T
+    
+    if rotation is not None:
+        pitch, yaw, roll = np.radians(rotation)
+        
+        Rx = np.array([
+            [1, 0, 0],
+            [0, np.cos(pitch), -np.sin(pitch)],
+            [0, np.sin(pitch), np.cos(pitch)]
+        ])
+        
+        Ry = np.array([
+            [np.cos(yaw), 0, np.sin(yaw)],
+            [0, 1, 0],
+            [-np.sin(yaw), 0, np.cos(yaw)]
+        ])
+        
+        Rz = np.array([
+            [np.cos(roll), -np.sin(roll), 0],
+            [np.sin(roll), np.cos(roll), 0],
+            [0, 0, 1]
+        ])
+        
+        R = Rx @ Ry @ Rz
+        
+        rotated_vertices = np.dot(np.vstack([x, y, z]).T, R.T)
+        x, y, z = rotated_vertices.T
+    
+    x /= scale * scale_coefs[0] * 3000
+    y /= scale * scale_coefs[1] * 3000
+    z /= scale * scale_coefs[2] * 3000
+    
+    x += center[0]
+    y += center[1]
+    z += center[2]
+    z += 400
+    
+    mesh = go.Mesh3d(
+        x=x,
+        y=y,
+        z=z,
+        i=i,
+        j=j,
+        k=k,
+        color=color,
+        flatshading=True,
+        showscale=False,
+        hoverinfo="skip",
+        lighting=dict(
+            ambient=0.3,
+            diffuse=0.8,
+            fresnel=0.1,
+            specular=0.5,
+            roughness=0.1
+        ),
+        lightposition=dict(x=100, y=100, z=1000)
+    )
+    
+    fig.add_trace(mesh)
     return fig

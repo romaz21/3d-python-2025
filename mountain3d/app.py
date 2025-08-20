@@ -17,6 +17,7 @@ from .const import (
     REPO_ROOT,
 )
 from .graphics import (
+    add_aircraft,
     create_figure,
     draw_alarm_fire_stl_model,
     draw_detection_dome,
@@ -58,13 +59,21 @@ def run_app():  # noqa
         open(REPO_ROOT / "config_annotation/fire_config.json") as fire_conf,
         open(REPO_ROOT / "config_annotation/control_config.json") as control_conf,
         open(REPO_ROOT / "config_annotation/object_config.json") as object_conf,
+        open(REPO_ROOT / "config_annotation/dron_config.json") as dron_conf,
     ):
         loc_ann: Dict = json.load(alarm_conf)
         launch_ann: Dict = json.load(fire_conf)
         control_ann: Dict = json.load(control_conf)
         object_ann: Dict = json.load(object_conf)
+        dron_ann: Dict = json.load(dron_conf)
 
     app = Dash(__name__, prevent_initial_callbacks=True)
+
+    def create_input_groups(config: Dict, prefix: str) -> List[dbc.InputGroup]:
+        return [
+            construct_input_group(prefix, key, val)
+            for key, val in config.items()
+        ]
 
     def construct_input_group(arma_type, key, val):
         input_id = f"{arma_type}_inp_{key}"
@@ -81,65 +90,18 @@ def run_app():  # noqa
                 ]
             )
 
-    locator_data_input = [
-        construct_input_group("loc", key, val) for key, val in loc_ann.items()
-    ]
-
-    launcher_data_input = [
-        construct_input_group("launch", key, val) for key, val in launch_ann.items()
-    ]
-
-    control_data_input = [
-        construct_input_group("control", key, val) for key, val in control_ann.items()
-    ]
-
-    object_data_input = [
-        construct_input_group("object", key, val) for key, val in object_ann.items()
-    ]
+    locator_data_input = create_input_groups(loc_ann, "loc")
+    launcher_data_input = create_input_groups(launch_ann, "launch")
+    control_data_input = create_input_groups(control_ann, "control")
+    object_data_input = create_input_groups(object_ann, "object")
+    dron_data_input = create_input_groups(dron_ann, "dron")
 
     app.layout = dbc.Container(
         [
             dbc.Modal(
                 [
                     dbc.ModalHeader("Выбор техники"),
-                    dbc.ModalBody(
-                        [
-                            dbc.Card(
-                                [
-                                    dbc.CardHeader("Параметры техники"),
-                                    dbc.CardBody(
-                                        [
-                                            dbc.Tabs(
-                                                id="input_tabs",
-                                                children=[
-                                                    dbc.Tab(
-                                                        label="РЛС",
-                                                        tab_id="locator_input",
-                                                        children=locator_data_input,
-                                                    ),
-                                                    dbc.Tab(
-                                                        label="ЗРК",
-                                                        tab_id="launcher_input",
-                                                        children=launcher_data_input,
-                                                    ),
-                                                    dbc.Tab(
-                                                        label="КП",
-                                                        tab_id="control_input",
-                                                        children=control_data_input,
-                                                    ),
-                                                    dbc.Tab(
-                                                        label="ОО",
-                                                        tab_id="object_input",
-                                                        children=object_data_input,
-                                                    ),
-                                                ],
-                                            ),
-                                        ]
-                                    ),
-                                ]
-                            ),
-                        ]
-                    ),
+                    create_body(locator_data_input, launcher_data_input, control_data_input, object_data_input, dron_data_input),
                     dbc.ModalFooter(
                         [
                             dcc.Upload(
@@ -157,51 +119,7 @@ def run_app():  # noqa
                 id="modal",
             ),
             dcc.Graph(figure=fig, id="main_graph", style={"height": "100%"}),
-            dbc.Row(
-                [
-                    dbc.InputGroup(
-                        [
-                            dbc.InputGroupText("Размер карты, в пикселях"),
-                            dbc.Input(
-                                id="graph_width", type="number", value=DEFAULT_WIDTH
-                            ),
-                            dbc.InputGroupText("в высоту;"),
-                            dbc.Input(
-                                id="graph_height", type="number", value=DEFAULT_HEIGHT
-                            ),
-                            dbc.InputGroupText("в ширину."),
-                            dbc.InputGroupText("Соотношение сторон:"),
-                            dbc.Input(
-                                id="x_ratio", type="number", value=DEFAULT_RATIO[0]
-                            ),
-                            dbc.InputGroupText(":"),
-                            dbc.Input(
-                                id="y_ratio", type="number", value=DEFAULT_RATIO[1]
-                            ),
-                            dbc.InputGroupText(":"),
-                            dbc.Input(
-                                id="z_ratio", type="number", value=DEFAULT_RATIO[2]
-                            ),
-                            dbc.Button("Обновить карту", id="clean_map"),
-                            dbc.InputGroupText("3D"),
-                            dbc.Switch(
-                                id="2d_mode", label="", value=False, className="fs-2"
-                            ),
-                            dbc.InputGroupText("2D"),
-                        ]
-                    ),
-                    dbc.InputGroup(
-                        [
-                            dbc.InputGroupText("Высота среза в 2D, м:"),
-                            dbc.Input(
-                                id="slice_height_2d",
-                                type="number",
-                                value=DEFAULT_SLICE_HEIGHT_2D,
-                            ),
-                        ]
-                    ),
-                ]
-            ),
+            create_controls(),
             dcc.Store(id="coordinate_store"),
         ],
         style={"height": "100%"},
@@ -214,11 +132,13 @@ def run_app():  # noqa
     )
     def open_arma_settings(clickData):
         clicked_point = clickData["points"][-1]
+        logger.info(f"Clicked point: {clickData}")
         x, y, z = (
             int(clicked_point["x"]),
             int(clicked_point["y"]),
             int(clicked_point["z"]),
         )
+        logger.info(f"Clicked point: {x=}, {y=}, {z=}")
         return True, json.dumps((x, y, z))
 
     @app.callback(
@@ -323,6 +243,9 @@ def run_app():  # noqa
             elif active_tab == "object_input":
                 arma_type = "object"
                 config = object_config
+            elif active_tab == "dron_input":
+                arma_type = "dron"
+                config = object_config
             else:
                 raise ValueError(f"Invalid tab id! {active_tab=}")
 
@@ -335,6 +258,13 @@ def run_app():  # noqa
                 draw_alarm_fire_stl_model(fig, image_file, center, scale_coefs)
 
             if arma_type == "control" or arma_type == "object":
+                return False, fig
+            
+            logger.info(f"Drawing {arma_type} detection dome...")
+            if arma_type == "dron":
+                print("center: ", center)
+                print("center_pos: ", center_pos)
+                add_aircraft(fig, center, scale_coefs=scale_coefs)
                 return False, fig
 
             heights, layers_dots_inner, layers_dots_outer = get_zone(
@@ -423,3 +353,93 @@ def run_app():  # noqa
         )[0]
 
     app.run(debug=True)
+
+def create_body(locator_data_input, launcher_data_input, control_data_input, object_data_input, dron_data_input) -> dbc.ModalBody:
+    return dbc.ModalBody(
+        [
+            dbc.Card(
+                [
+                    dbc.CardHeader("Параметры техники"),
+                    dbc.CardBody(
+                        [
+                            dbc.Tabs(
+                                id="input_tabs",
+                                children=[
+                                    dbc.Tab(
+                                        label="РЛС",
+                                        tab_id="locator_input",
+                                        children=locator_data_input,
+                                    ),
+                                    dbc.Tab(
+                                        label="ЗРК",
+                                        tab_id="launcher_input",
+                                        children=launcher_data_input,
+                                    ),
+                                    dbc.Tab(
+                                        label="КП",
+                                        tab_id="control_input",
+                                        children=control_data_input,
+                                    ),
+                                    dbc.Tab(
+                                        label="ОО",
+                                        tab_id="object_input",
+                                        children=object_data_input,
+                                    ),
+                                    dbc.Tab(
+                                        label="Дрон",
+                                        tab_id="dron_input",
+                                        children=dron_data_input,
+                                    ),
+                                ],
+                            ),
+                        ]
+                    ),
+                ]
+            ),
+        ]
+    )
+
+def create_controls() -> dbc.Row:
+    return dbc.Row([
+        dbc.Row([
+            dbc.Col(dbc.InputGroup([
+                dbc.InputGroupText("Ширина"), 
+                dbc.Input(id="graph_width", type="number", value=DEFAULT_WIDTH)
+            ]), md=3),
+            
+            dbc.Col(dbc.InputGroup([
+                dbc.InputGroupText("Высота"),
+                dbc.Input(id="graph_height", type="number", value=DEFAULT_HEIGHT)
+            ]), md=3),
+            
+            dbc.Col(dbc.InputGroup([
+                dbc.InputGroupText("2D срез (м)"),
+                dbc.Input(id="slice_height_2d", type="number", value=DEFAULT_SLICE_HEIGHT_2D)
+            ]), md=3),
+            
+            dbc.Col(dbc.InputGroup([
+                dbc.InputGroupText("Режим"),
+                dbc.Switch(id="2d_mode", label="2D/3D", value=False)
+            ]), md=3)
+        ], className="g-2 mb-3"),
+        
+        dbc.Row([
+            dbc.InputGroupText("Соотношение"),
+            dbc.Col(dbc.InputGroup([
+                dbc.InputGroupText("X"),
+                dbc.Input(id="x_ratio", type="number", value=DEFAULT_RATIO[0])
+            ]), md=2),
+            
+            dbc.Col(dbc.InputGroup([
+                dbc.InputGroupText("Y"),
+                dbc.Input(id="y_ratio", type="number", value=DEFAULT_RATIO[1])
+            ]), md=2),
+            
+            dbc.Col(dbc.InputGroup([
+                dbc.InputGroupText("Z"),
+                dbc.Input(id="z_ratio", type="number", value=DEFAULT_RATIO[2])
+            ]), md=2),
+            
+            dbc.Col(dbc.Button("Обновить карту", id="clean_map", color="primary"), md=6)
+        ], className="g-2")
+    ])
