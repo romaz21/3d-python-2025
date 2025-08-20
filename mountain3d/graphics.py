@@ -442,13 +442,16 @@ def add_aircraft(
         rotated_vertices = np.dot(np.vstack([x, y, z]).T, R.T)
         x, y, z = rotated_vertices.T
     
-    x /= scale * scale_coefs[0] * 3000
-    y /= scale * scale_coefs[1] * 3000
-    z /= scale * scale_coefs[2] * 3000
+    x /= scale * scale_coefs[0] * 6000
+    y /= scale * scale_coefs[1] * 6000
+    z /= scale * scale_coefs[2] * 6000
     
-    x += center[0]
-    y += center[1]
-    z += center[2]
+    model_center_x = (np.max(x) + np.min(x)) / 2
+    model_center_y = (np.max(y) + np.min(y)) / 2
+    
+    x = x - model_center_x + center[0]
+    y = y - model_center_y + center[1]
+    z += center[2] + 500
     
     mesh = go.Mesh3d(
         x=x,
@@ -462,13 +465,13 @@ def add_aircraft(
         showscale=False,
         hoverinfo="skip",
         lighting=dict(
-            ambient=0.3,
-            diffuse=0.8,
+            ambient=0.5,  # Увеличить окружающее освещение
+            diffuse=1.0,  # Увеличить рассеянное освещение
             fresnel=0.1,
-            specular=0.5,
-            roughness=0.1
+            specular=1.0,  # Увеличить зеркальное отражение
+            roughness=0.05  # Уменьшить шероховатость для большего блеска
         ),
-        lightposition=dict(x=100, y=100, z=1000)
+        lightposition=dict(x=200, y=200, z=1000)
     )
     
     fig.add_trace(mesh)
