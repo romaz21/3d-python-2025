@@ -187,33 +187,122 @@ def draw_detection_dome(
     fig: go.Figure,
     color: str,
 ) -> go.Figure:
-    print("Drawing stl mode4...")
+    """
+    # Преобразуем данные в формат для построения поверхности
     dots_per_layer = layers_dots[0].shape[1]
-    total_dots = dots_per_layer * len(heights)
-
-    zs = np.repeat(np.fromiter(heights, float), dots_per_layer)
-    xs, ys = np.concatenate(layers_dots, axis=-1)
-
-    i = np.empty((total_dots - dots_per_layer) * 2)
-    i[0::2] = np.arange(total_dots - dots_per_layer)
-    i[1::2] = np.arange(dots_per_layer, total_dots)
-
-    j = np.roll(i, 1)
-    k = np.roll(i, 2)
-
-    fig.add_mesh3d(
-        x=xs,
-        y=ys,
-        z=zs,
-        i=i.tolist(),
-        j=j.tolist(),
-        k=k.tolist(),
-        color=color,
-        opacity=0.2,
-        hoverinfo="skip",
-    )
-
+    num_layers = len(heights)
+    
+    # Создаем массивы координат для поверхности
+    x_surface = np.zeros((num_layers, dots_per_layer))
+    y_surface = np.zeros((num_layers, dots_per_layer))
+    z_surface = np.zeros((num_layers, dots_per_layer))
+    
+    # Заполняем координаты
+    for i in range(num_layers):
+        x_surface[i, :] = layers_dots[i][0]
+        y_surface[i, :] = layers_dots[i][1]
+        z_surface[i, :] = heights[i]
+    
+    # Добавляем первую точку в конец для замыкания контура
+    x_surface = np.concatenate([x_surface, x_surface[:, :1]], axis=1)
+    y_surface = np.concatenate([y_surface, y_surface[:, :1]], axis=1)
+    z_surface = np.concatenate([z_surface, z_surface[:, :1]], axis=1)
+    
+    # Создаем гладкую поверхность
+    fig.add_trace(go.Surface(
+        x=x_surface,
+        y=y_surface,
+        z=z_surface,
+        colorscale=[[0, color], [1, color]],
+        opacity=0.3,
+        showscale=False,
+        hoverinfo='skip',
+        lighting=dict(
+            ambient=0.8,
+            diffuse=0.2,
+            fresnel=0.1,
+            specular=0.1,
+            roughness=0.5
+        ),
+        lightposition=dict(x=100, y=100, z=1000)
+    ))
+    
+    # Добавляем контур для лучшей видимости
+    fig.add_trace(go.Scatter3d(
+        x=x_surface.flatten(),
+        y=y_surface.flatten(),
+        z=z_surface.flatten(),
+        mode='lines',
+        line=dict(color=color, width=1),
+        opacity=0.6,
+        hoverinfo='skip',
+        showlegend=False
+    ))
+    
     return fig
+    """
+
+    
+    dots_per_layer = layers_dots[0].shape[1]
+    num_layers = len(heights)
+    
+    # Подготовка вершин
+    vertices = []
+    for i in range(num_layers):
+        for j in range(dots_per_layer):
+            vertices.append([layers_dots[i][0][j], layers_dots[i][1][j], heights[i]])
+    
+    # Подготовка треугольников
+    faces = []
+    for i in range(num_layers - 1):
+        for j in range(dots_per_layer - 1):
+            idx1 = i * dots_per_layer + j
+            idx2 = i * dots_per_layer + j + 1
+            idx3 = (i + 1) * dots_per_layer + j
+            idx4 = (i + 1) * dots_per_layer + j + 1
+            
+            faces.extend([[idx1, idx2, idx3], [idx2, idx4, idx3]])
+    
+    # Замыкаем контур
+    for i in range(num_layers - 1):
+        j = dots_per_layer - 1
+        idx1 = i * dots_per_layer + j
+        idx2 = i * dots_per_layer
+        idx3 = (i + 1) * dots_per_layer + j
+        idx4 = (i + 1) * dots_per_layer
+        
+        faces.extend([[idx1, idx2, idx3], [idx2, idx4, idx3]])
+    
+    # Извлекаем координаты
+    vertices = np.array(vertices)
+    x, y, z = vertices.T
+    
+    # Создаем индексы для треугольников
+    i, j, k = [], [], []
+    for face in faces:
+        i.append(face[0])
+        j.append(face[1])
+        k.append(face[2])
+    
+    # Добавляем гладкую mesh
+    fig.add_trace(go.Mesh3d(
+        x=x, y=y, z=z,
+        i=i, j=j, k=k,
+        color=color,
+        opacity=0.3,
+        flatshading=False,
+        lighting=dict(
+            ambient=0.7,
+            diffuse=0.3,
+            roughness=0.2,
+            specular=0.1
+        ),
+        lightposition=dict(x=100, y=100, z=1000),
+        hoverinfo='skip'
+    ))
+    
+    return fig
+    
 
 
 def create_figure(
@@ -360,7 +449,6 @@ def add_aircraft(
     x += center[0]
     y += center[1]
     z += center[2]
-    z += 400
     
     mesh = go.Mesh3d(
         x=x,
@@ -369,7 +457,7 @@ def add_aircraft(
         i=i,
         j=j,
         k=k,
-        color=color,
+        color="rgb(255, 0, 0)",
         flatshading=True,
         showscale=False,
         hoverinfo="skip",

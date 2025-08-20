@@ -68,6 +68,12 @@ def run_app():  # noqa
     fig.update_layout(
         scene_camera=camera_settings,
         margin=dict(l=0, r=0, t=0, b=0),
+        scene=dict(
+            xaxis=dict(showbackground=False, visible=False),
+            yaxis=dict(showbackground=False, visible=False),
+            zaxis=dict(showbackground=False, visible=False),
+            bgcolor='white'
+        )
     )
 
     with (
@@ -547,6 +553,7 @@ def create_controls() -> dbc.Row:
                 dbc.InputGroupText("2D срез (м)"),
                 dbc.Input(id="slice_height_2d", type="number", value=DEFAULT_SLICE_HEIGHT_2D)
             ]), md=3),
+            dbc.Button("Рассчитать", id="calculate_zones_button"),
             
             dbc.Col(dbc.InputGroup([
                 dbc.InputGroupText("Режим"),
