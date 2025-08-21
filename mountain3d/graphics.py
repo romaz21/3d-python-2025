@@ -388,6 +388,95 @@ def draw_alarm_fire_stl_model(
 
     return fig
 
+def add_alarm(
+    fig: go.Figure,
+    center: List,
+    scale: float = 1.0,
+    rotation: List = [0, 0, 0],
+    color: str = "red",
+    scale_coefs: List[float] = None
+) -> go.Figure:
+    model = Mesh.from_file('./3d-python-media/models/p-18.stl')
+    
+    vertices, i, j, k = stl2mesh3d(model)
+    x, y, z = vertices.T
+
+    if scale_coefs is None:
+        scale_coefs = [1.0, 1.0, 1.0]
+    
+    base_rotation = np.radians([0, 0, 0])
+    pitch_base, yaw_base, roll_base = base_rotation
+    
+    Rx_base = np.array([
+        [1, 0, 0],
+        [0, np.cos(pitch_base), -np.sin(pitch_base)],
+        [0, np.sin(pitch_base), np.cos(pitch_base)]
+    ])
+    
+    rotated_base = np.dot(np.vstack([x, y, z]).T, Rx_base.T)
+    x, y, z = rotated_base.T
+    
+    if rotation is not None:
+        pitch, yaw, roll = np.radians(rotation)
+        
+        Rx = np.array([
+            [1, 0, 0],
+            [0, np.cos(pitch), -np.sin(pitch)],
+            [0, np.sin(pitch), np.cos(pitch)]
+        ])
+        
+        Ry = np.array([
+            [np.cos(yaw), 0, np.sin(yaw)],
+            [0, 1, 0],
+            [-np.sin(yaw), 0, np.cos(yaw)]
+        ])
+        
+        Rz = np.array([
+            [np.cos(roll), -np.sin(roll), 0],
+            [np.sin(roll), np.cos(roll), 0],
+            [0, 0, 1]
+        ])
+        
+        R = Rx @ Ry @ Rz
+        
+        rotated_vertices = np.dot(np.vstack([x, y, z]).T, R.T)
+        x, y, z = rotated_vertices.T
+    
+    x /= scale * scale_coefs[0] * 10000
+    y /= scale * scale_coefs[1] * 10000
+    z /= scale * scale_coefs[2] * 10000
+    
+    model_center_x = (np.max(x) + np.min(x)) / 2
+    model_center_y = (np.max(y) + np.min(y)) / 2
+    
+    x = x - model_center_x + center[0]
+    y = y - model_center_y + center[1]
+    z += center[2]
+    
+    mesh = go.Mesh3d(
+        x=x,
+        y=y,
+        z=z,
+        i=i,
+        j=j,
+        k=k,
+        color="rgb(255, 0, 0)",
+        flatshading=True,
+        showscale=False,
+        hoverinfo="skip",
+        lighting=dict(
+            ambient=0.5,  # Увеличить окружающее освещение
+            diffuse=1.0,  # Увеличить рассеянное освещение
+            fresnel=0.1,
+            specular=1.0,  # Увеличить зеркальное отражение
+            roughness=0.05  # Уменьшить шероховатость для большего блеска
+        ),
+        lightposition=dict(x=200, y=200, z=1000)
+    )
+    
+    fig.add_trace(mesh)
+    return fig
+
 def add_aircraft(
     fig: go.Figure,
     center: List,
@@ -460,7 +549,7 @@ def add_aircraft(
         i=i,
         j=j,
         k=k,
-        color="rgb(255, 0, 0)",
+        color="rgb(0, 16, 255)",
         flatshading=True,
         showscale=False,
         hoverinfo="skip",

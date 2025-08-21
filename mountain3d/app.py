@@ -22,6 +22,7 @@ from .const import (
     FIRE_HEIGHT_COLOR_MAPPING,
 )
 from .graphics import (
+    add_alarm,
     add_aircraft,
     create_figure,
     draw_alarm_fire_stl_model,
@@ -318,6 +319,9 @@ def run_app():  # noqa
                 if arma_type == "control" or arma_type == "object":
                     continue
 
+                if arma_type == "alarm":
+                    add_alarm(fig, center, scale_coefs=scale_coefs)
+
                 if arma_type == "dron":
                     add_aircraft(fig, center, scale_coefs=scale_coefs)
                     continue
@@ -337,7 +341,7 @@ def run_app():  # noqa
                     length_coefficient_y=spacing[1],
                 )
 
-                color = "magenta" if arma_type == "fire" else "cyan"
+                color = "magenta" if arma_type == "fire" else "pink"
                 layers_dots = np.concatenate(
                     [layers_dots_inner, layers_dots_outer[::-1]], axis=0
                 )
